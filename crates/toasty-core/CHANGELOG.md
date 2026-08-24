@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/tokio-rs/toasty/compare/toasty-core-v0.10.0...toasty-core-v0.11.0) - 2026-08-24
+
+### Added
+
+- *(postgresql)* Support unique Vec constraints ([#1199])
+- *(engine)* Add conditional execution to the exec program ([#1182])
+
+### Fixed
+
+- *(mysql)* [**breaking**] Stop inferring batch insert IDs ([#1194])
+- *(sql)* Quote PostgreSQL enum type names ([#1186])
+
+[#1182]: https://github.com/tokio-rs/toasty/pull/1182
+[#1186]: https://github.com/tokio-rs/toasty/pull/1186
+[#1194]: https://github.com/tokio-rs/toasty/pull/1194
+[#1199]: https://github.com/tokio-rs/toasty/pull/1199
+
 ## [0.10.0](https://github.com/tokio-rs/toasty/compare/toasty-core-v0.9.0...toasty-core-v0.10.0) - 2026-08-11
 
 ### Added

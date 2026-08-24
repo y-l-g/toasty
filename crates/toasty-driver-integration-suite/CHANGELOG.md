@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/tokio-rs/toasty/compare/toasty-driver-integration-suite-v0.10.0...toasty-driver-integration-suite-v0.11.0) - 2026-08-24
+
+### Added
+
+- PostgreSQL supports unique Vec constraints ([#1199])
+- Conditional execution in the exec program ([#1182])
+
+### Fixed
+
+- [**breaking**] MySQL batch inserts no longer infer IDs ([#1194])
+- PostgreSQL enum type names are now properly quoted ([#1186])
+- [**breaking**] Newtype fields are now named `inner` instead of `_0` ([#1183])
+
+### Changed
+
+- [**breaking**] Removed deprecated anonymous-struct syntax from assert_struct! ([#1191])
+
+[#1182]: https://github.com/tokio-rs/toasty/pull/1182
+[#1183]: https://github.com/tokio-rs/toasty/pull/1183
+[#1186]: https://github.com/tokio-rs/toasty/pull/1186
+[#1191]: https://github.com/tokio-rs/toasty/pull/1191
+[#1194]: https://github.com/tokio-rs/toasty/pull/1194
+[#1199]: https://github.com/tokio-rs/toasty/pull/1199
+
 ## [0.10.0](https://github.com/tokio-rs/toasty/compare/toasty-driver-integration-suite-v0.9.0...toasty-driver-integration-suite-v0.10.0) - 2026-08-11
 
 ### Added

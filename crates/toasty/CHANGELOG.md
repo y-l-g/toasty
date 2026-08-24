@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/tokio-rs/toasty/compare/toasty-v0.10.0...toasty-v0.11.0) - 2026-08-24
+
+### Added
+
+- *(postgresql)* Support unique Vec constraints ([#1199])
+- *(engine)* Conditional execution in the exec program ([#1182])
+
+### Fixed
+
+- Connect max_connection is now properly read from the driver ([#1195])
+- *(macros)* Allow fields named `path` and `from_path` ([#1196])
+- *(mysql)* [**breaking**] Batch insert IDs are no longer inferred ([#1194])
+
+[#1182]: https://github.com/tokio-rs/toasty/pull/1182
+[#1194]: https://github.com/tokio-rs/toasty/pull/1194
+[#1195]: https://github.com/tokio-rs/toasty/pull/1195
+[#1196]: https://github.com/tokio-rs/toasty/pull/1196
+[#1199]: https://github.com/tokio-rs/toasty/pull/1199
+
 ## [0.10.0](https://github.com/tokio-rs/toasty/compare/toasty-v0.9.0...toasty-v0.10.0) - 2026-08-11
 
 ### Added
