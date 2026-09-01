@@ -1,5 +1,5 @@
 use super::Load;
-use crate::stmt::{Expr, IntoExpr, IntoInsert, List, Path};
+use crate::stmt::{Expr, IntoExpr, IntoInsert, List, OrderByExpr, Path};
 
 use toasty_core::schema::app::{self, FieldId, ModelId, ModelSet};
 
@@ -61,6 +61,28 @@ pub trait Model: Load<Output = Self> + Sized {
 
     /// Returns the schema definition for this model.
     fn schema() -> app::Model;
+
+    /// Ascending [`OrderByExpr`]s for each primary-key field, in primary-key
+    /// order.
+    ///
+    /// With a struct-level `#[key(partition = (…), local = (…))]`, partition
+    /// fields come first, then local — not necessarily field declaration
+    /// order.
+    ///
+    /// Intended as pagination tie-breakers: append these after a user-chosen
+    /// `order_by` so cursor order is deterministic.
+    fn primary_key_order_bys() -> Vec<OrderByExpr> {
+        Self::schema()
+            .as_root_unwrap()
+            .primary_key
+            .fields
+            .iter()
+            .map(|field_id| OrderByExpr {
+                expr: toasty_core::stmt::Expr::ref_self_field(*field_id),
+                order: Some(toasty_core::stmt::Direction::Asc),
+            })
+            .collect()
+    }
 
     /// Register this model and all models reachable through its fields into
     /// the given [`ModelSet`].
