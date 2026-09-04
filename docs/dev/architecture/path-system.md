@@ -90,6 +90,23 @@ let p: Path = path![.0 .1];   // two-step projection
 
 Projection equality and hashing are designed so single-step projections compare and hash like a bare `usize`, which lets `IndexMap` lookups accept either form interchangeably.
 
+### Shared-column steps
+
+One exception to "steps are field indices": embedded-enum gateless
+shared reads (`#[shared]`) reuse Model-rooted single-step projections
+with steps at or above `EmbeddedEnum::shared_step_base(fields.len())`,
+past every reachable per-variant record position:
+
+```
+creature().name()                // projection [creature_idx, 5], 5 = base(4) + 0
+creature().human().profession()  // gated read: record position 2
+```
+
+`Schema::resolve` and lowering decode steps `>= base` via
+`EmbeddedEnum::shared_read_at_step`
+(`toasty-core/src/schema/app/model.rs`) before the generic per-variant
+distribution runs, so the two encodings never meet.
+
 ## How Paths Are Used
 
 Paths appear in every part of the system that needs to name a field.
@@ -144,10 +161,12 @@ Update statements address fields by path. The same typed accessors used for filt
 `Path::into_stmt()` is the bridge from path to expression IR. The conversion depends on the root:
 
 **Model root:**
+
 - Empty projection → `Expr::ref_ancestor_model(0)` (the root record itself).
 - Non-empty projection → `Expr::ref_self_field(FieldId)` for the first step, followed by `Expr::project` for any remaining steps.
 
 **Variant root:**
+
 - Recursively lowers the parent path to an expression that reaches the enum field.
 - Empty projection → returns the parent expression unchanged.
 - Non-empty projection → projects the parent expression at `local_idx + 1` (skipping the discriminant), then applies any remaining steps as a further projection.

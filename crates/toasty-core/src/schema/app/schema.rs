@@ -204,15 +204,33 @@ impl Schema {
                             current_field = s.fields.get(*step)?;
                         }
                         Model::EmbeddedEnum(e) => {
-                            let variant = e.variants.get(*step)?;
+                            // Gateless shared read; see `shared_read_at_step`.
+                            // Its step is offset past every record position.
+                            if steps.as_slice().is_empty()
+                                && let Some((_, field)) = e.shared_read_at_step(*step)
+                            {
+                                current_field = field;
+                                continue;
+                            }
+
+                            let variant = e.variants.get(*step);
 
                             // Check if there's a field index step after the variant
                             if let Some(field_step) = steps.next() {
-                                // Two steps: variant disc + field index → field
+                                // Two steps: variant disc + field index → field.
+                                // The disc must name a real variant.
+                                variant?;
                                 current_field = e.fields.get(*field_step)?;
-                            } else {
-                                // Single step: variant discriminant only → variant
+                            } else if let Some(variant) = variant {
+                                // Single step naming a variant: variant
+                                // discriminant access
                                 return Some(Resolved::Variant(variant));
+                            } else {
+                                // Single step naming a record position (a
+                                // variant-gated read's trailing step). Valid
+                                // when some variant stores a field there.
+                                let field_index = e.field_at_record_position(*step)?;
+                                current_field = e.fields.get(field_index)?;
                             }
                         }
                         _ => return None,
