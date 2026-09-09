@@ -258,7 +258,7 @@ migrations.
 
 The driver maps duplicate-key failures to `Error::UniqueViolation`.
 All other `rusqlite` failures surface as
-`Error::DriverOperationFailed`, with two specific exceptions:
+`Error::DriverOperationFailed`. The complete mapping is:
 
 | Condition | Toasty error |
 |---|---|
