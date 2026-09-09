@@ -50,7 +50,7 @@ use crate::{oid_cache::OidCache, statement_cache::StatementCache};
 /// Classifies a `tokio_postgres::Error` into a Toasty error.
 ///
 /// Errors that carry a server-side `DbError` are mapped to typed
-/// variants where one exists (`SerializationFailure`,
+/// variants where one exists (`SerializationFailure`, `UniqueViolation`,
 /// `ReadOnlyTransaction`); everything else with a `DbError` becomes
 /// `DriverOperationFailed`. Errors *without* a `DbError` are
 /// classified as `ConnectionLost`: per `tokio-postgres`, those
@@ -61,6 +61,7 @@ fn classify_pg_error(e: tokio_postgres::Error) -> toasty_core::Error {
     if let Some(db_err) = e.as_db_error() {
         match db_err.code().code() {
             "40001" => toasty_core::Error::serialization_failure(db_err.message()),
+            "23505" => toasty_core::Error::unique_violation(db_err.message()),
             "25006" => toasty_core::Error::read_only_transaction(db_err.message()),
             _ => toasty_core::Error::driver_operation_failed(e),
         }

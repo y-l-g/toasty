@@ -119,3 +119,4 @@ pub mod type_jiff;
 pub mod type_net;
 pub mod type_primitives;
 pub mod type_serialize;
+pub mod unique_violation;

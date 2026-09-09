@@ -23,6 +23,7 @@ mod read_only_transaction;
 mod record_not_found;
 mod serialization_failure;
 mod transaction_timeout;
+mod unique_violation;
 mod unsupported_feature;
 mod validation;
 
@@ -44,6 +45,7 @@ use record_not_found::RecordNotFound;
 use serialization_failure::SerializationFailure;
 use std::sync::Arc;
 use transaction_timeout::TransactionTimeout;
+use unique_violation::UniqueViolation;
 use unsupported_feature::UnsupportedFeature;
 use validation::ValidationFailed;
 
@@ -121,6 +123,7 @@ enum ErrorKind {
     ReadOnlyTransaction(ReadOnlyTransaction),
     SerializationFailure(SerializationFailure),
     TransactionTimeout(TransactionTimeout),
+    UniqueViolation(UniqueViolation),
     UnsupportedFeature(UnsupportedFeature),
     ValidationFailed(ValidationFailed),
     ConditionFailed(ConditionFailed),
@@ -235,6 +238,7 @@ impl core::fmt::Display for ErrorKind {
             ReadOnlyTransaction(err) => core::fmt::Display::fmt(err, f),
             SerializationFailure(err) => core::fmt::Display::fmt(err, f),
             TransactionTimeout(err) => core::fmt::Display::fmt(err, f),
+            UniqueViolation(err) => core::fmt::Display::fmt(err, f),
             UnsupportedFeature(err) => core::fmt::Display::fmt(err, f),
             ValidationFailed(err) => core::fmt::Display::fmt(err, f),
             ConditionFailed(err) => core::fmt::Display::fmt(err, f),
@@ -534,5 +538,35 @@ mod tests {
             err.to_string(),
             "create user failed: read-only transaction: INSERT not allowed"
         );
+    }
+
+    #[test]
+    fn unique_violation_display() {
+        let err = Error::unique_violation("UNIQUE constraint failed: users.email");
+        assert_eq!(
+            err.to_string(),
+            "unique violation: UNIQUE constraint failed: users.email"
+        );
+    }
+
+    #[test]
+    fn unique_violation_is_predicate() {
+        let err = Error::unique_violation("duplicate key");
+        assert!(err.is_unique_violation());
+        assert!(!err.is_driver_operation_failed());
+        assert!(!err.is_condition_failed());
+    }
+
+    #[test]
+    fn unique_violation_predicate_false_for_other_errors() {
+        let err =
+            Error::driver_operation_failed(std::io::Error::new(std::io::ErrorKind::Other, "boom"));
+        assert!(!err.is_unique_violation());
+
+        let err = Error::condition_failed("optimistic lock version mismatch");
+        assert!(!err.is_unique_violation());
+
+        let err = Error::serialization_failure("concurrent update conflict");
+        assert!(!err.is_unique_violation());
     }
 }
