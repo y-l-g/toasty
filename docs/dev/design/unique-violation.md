@@ -76,7 +76,7 @@ if err.is_unique_violation() {
 }
 ```
 
-Cross-backend callers also check `is_condition_failed()` for DynamoDB, which reports uniqueness-via-condition that way. The two predicates are not unified.
+Cross-backend callers also check `is_condition_failed()` for DynamoDB updates, which report uniqueness-via-condition that way. DynamoDB inserts with a unique index currently stay `DriverOperationFailed`. The two predicates are not unified.
 
 ## Behavior
 
@@ -91,7 +91,7 @@ The predicate checks the outermost error kind, like every other `is_*` predicate
 - Composite unique conflicts report the whole index, with no per-field attribution.
 - `NULL` values never produce a violation, per SQL semantics.
 - Primary-key conflicts report as unique violations because backends use the same channel (SQLite `PRIMARYKEY` extended code, MySQL `ER_DUP_ENTRY`, PostgreSQL `23505` for both cases).
-- On DynamoDB, the equivalent failure surfaces as `ConditionFailed`, not `UniqueViolation`.
+- On DynamoDB, update-path uniqueness failures surface as `ConditionFailed`, not `UniqueViolation`. Inserts with a unique index currently stay `DriverOperationFailed`.
 
 ## Driver integration
 
