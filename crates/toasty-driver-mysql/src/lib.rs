@@ -64,6 +64,7 @@ fn classify_mysql_error(e: sqlx_core::Error) -> toasty_core::Error {
 
             match number {
                 1213 => toasty_core::Error::serialization_failure(message),
+                1022 | 1062 | 1169 | 1586 | 1859 => toasty_core::Error::unique_violation(message),
                 1792 => toasty_core::Error::read_only_transaction(message),
                 _ => toasty_core::Error::driver_operation_failed(sqlx_core::Error::Database(
                     database_error,
