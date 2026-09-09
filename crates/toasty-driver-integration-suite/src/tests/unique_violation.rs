@@ -30,6 +30,22 @@ pub async fn duplicate_unique_email_is_unique_violation(test: &mut Test) -> Resu
         !err.is_driver_operation_failed(),
         "expected not DriverOperationFailed, got: {err}"
     );
+    // Update path: moving a second row onto a taken value reports the same way.
+    let mut other = User::create().email("b@example.com").exec(&mut db).await?;
+    let err = other
+        .update()
+        .email("a@example.com")
+        .exec(&mut db)
+        .await
+        .unwrap_err();
+    assert!(
+        err.is_unique_violation(),
+        "expected UniqueViolation, got: {err}"
+    );
+    assert!(
+        !err.is_driver_operation_failed(),
+        "expected not DriverOperationFailed, got: {err}"
+    );
     // Negative: a non-duplicate failure is not a unique violation.
     let missing = User::get_by_email(&mut db, "missing@example.com")
         .await
@@ -139,6 +155,13 @@ pub async fn composite_unique_conflict_is_unique_violation(t: &mut Test) -> Resu
     toasty::create!(Account {
         org_id: 2_i64,
         slug: "abc"
+    })
+    .exec(&mut db)
+    .await?;
+    // Same org under a different slug is allowed — other direction.
+    toasty::create!(Account {
+        org_id: 1_i64,
+        slug: "xyz"
     })
     .exec(&mut db)
     .await?;
