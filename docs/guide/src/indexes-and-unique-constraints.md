@@ -61,14 +61,15 @@ toasty::create!(User {
 .await?;
 
 // This fails — email must be unique
-let result = toasty::create!(User {
+let err = toasty::create!(User {
     name: "Bob",
     email: "alice@example.com",
 })
 .exec(&mut db)
-.await;
+.await
+.unwrap_err();
 
-assert!(result.is_err());
+assert!(err.is_unique_violation());
 # Ok(())
 # }
 ```

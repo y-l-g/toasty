@@ -247,6 +247,7 @@ variants so the pool and caller can react sensibly.
 | MySQL error or condition | Toasty error |
 |---|---|
 | Error `1213` *(`ER_LOCK_DEADLOCK`)* | `Error::SerializationFailure` — retryable. InnoDB rolled back the transaction to break a deadlock; retry the unit of work. |
+| Errors `1022`, `1062`, `1169`, `1586`, `1859` *(duplicate-key failures)* | `Error::UniqueViolation` — duplicate unique index or primary key value. |
 | Error `1792` *(`ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION`)* | `Error::ReadOnlyTransaction` — the connection is read-only. |
 | Other server errors with a SQLSTATE | `Error::DriverOperationFailed` |
 | Socket / protocol errors (closed connection, pool disconnected) | `Error::ConnectionLost` |

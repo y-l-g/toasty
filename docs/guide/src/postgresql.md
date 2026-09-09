@@ -223,6 +223,7 @@ error variants so the pool and caller can react sensibly.
 | SQLSTATE or condition | Toasty error |
 |---|---|
 | `40001` *(serialization_failure)* | `Error::SerializationFailure` — retryable. The transaction lost an optimistic conflict and should be retried by the caller. |
+| `23505` *(unique_violation)* | `Error::UniqueViolation` — duplicate unique index or primary key value. |
 | `25006` *(read_only_sql_transaction)* | `Error::ReadOnlyTransaction` — the connection is read-only. |
 | Other server errors with a SQLSTATE | `Error::DriverOperationFailed` |
 | Socket / protocol errors (closed connection, broken pipe, end-of-stream during handshake) | `Error::ConnectionLost` |

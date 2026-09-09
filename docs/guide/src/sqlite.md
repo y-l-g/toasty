@@ -256,12 +256,13 @@ migrations.
 
 ## Errors and the connection pool
 
-The driver does not classify errors into Toasty's typed retry
-variants. Every `rusqlite` failure surfaces as
+The driver maps duplicate-key failures to `Error::UniqueViolation`.
+All other `rusqlite` failures surface as
 `Error::DriverOperationFailed`, with two specific exceptions:
 
 | Condition | Toasty error |
 |---|---|
+| `SQLITE_CONSTRAINT_UNIQUE` / `SQLITE_CONSTRAINT_PRIMARYKEY` | `Error::UniqueViolation` — duplicate unique index or primary key value |
 | URL with a non-`sqlite` scheme | `Error::InvalidConnectionUrl` |
 | Transaction started with an isolation level other than `Serializable` | `Error::UnsupportedFeature` |
 
