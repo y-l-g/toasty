@@ -432,17 +432,40 @@ impl VerifyExpr<'_, '_> {
         }
     }
 
+    /// The field a `Field { nesting: 0, index }` expression of the current
+    /// model references, if the index is in range.
+    fn root_field(&self, expr: &stmt::Expr) -> Option<&app::Field> {
+        let stmt::Expr::Reference(stmt::ExprReference::Field { nesting: 0, index }) = expr else {
+            return None;
+        };
+        self.schema
+            .app
+            .model(self.model)
+            .as_root()?
+            .fields
+            .get(*index)
+    }
+
+    /// Whether `expr` references an embedded-enum field of the current model
+    /// (`FieldTy::Embedded` targeting a `Model::EmbeddedEnum`).
+    fn is_embedded_enum_field(&self, expr: &stmt::Expr) -> bool {
+        let Some(field) = self.root_field(expr) else {
+            return false;
+        };
+        let app::FieldTy::Embedded(embedded) = &field.ty else {
+            return false;
+        };
+        matches!(
+            self.schema.app.model(embedded.target),
+            app::Model::EmbeddedEnum(_)
+        )
+    }
+
     /// Whether `expr` references a whole document-stored field of the current
     /// model: a `#[document]` embed (`Type::Model`) or an embed collection
     /// (`List(Model)`).
     fn is_document_field(&self, expr: &stmt::Expr) -> bool {
-        let stmt::Expr::Reference(stmt::ExprReference::Field { nesting: 0, index }) = expr else {
-            return false;
-        };
-        let Some(root) = self.schema.app.model(self.model).as_root() else {
-            return false;
-        };
-        let Some(field) = root.fields.get(*index) else {
+        let Some(field) = self.root_field(expr) else {
             return false;
         };
         let app::FieldTy::Primitive(primitive) = &field.ty else {
@@ -509,6 +532,7 @@ impl stmt::Visit for VerifyExpr<'_, '_> {
         }
     }
 
+    /// Resolves a bare projection (no root path) against the current model.
     fn visit_projection(&mut self, i: &stmt::Projection) {
         let root = self.schema.app.model(self.model);
         assert!(
@@ -522,6 +546,16 @@ impl stmt::Visit for VerifyExpr<'_, '_> {
         // current scope, combine the field index with the project's projection
         // to form the full path, then resolve from the root model.
         if let stmt::Expr::Reference(stmt::ExprReference::Field { nesting: 0, index }) = &*i.base {
+            // An embedded-enum base is a record, not a field path. The
+            // projection holds record slots (`local + 1`; slot 0 holds the
+            // discriminant), so one slot means a different field in every
+            // variant and the variant cannot be recovered from it. Skip
+            // resolution rather than resolving the slot as a variant index;
+            // record-aware validation is tracked in #1220.
+            if self.is_embedded_enum_field(&i.base) {
+                return;
+            }
+
             let mut full = stmt::Projection::single(*index);
             for step in &i.projection[..] {
                 full.push(*step);
@@ -625,7 +659,9 @@ fn rhs_is_concrete_list(expr: &stmt::Expr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::test_util::test_schema;
+    use crate as toasty;
+    use crate::engine::test_util::{test_schema, test_schema_with};
+    use crate::schema::{Embed, Model};
     use toasty_core::driver::Capability;
     use toasty_core::stmt::{Expr, ExprIsSuperset, ExprList, Value};
 
@@ -743,5 +779,148 @@ mod tests {
     fn case_sensitive_like_accepted_on_sqlite() {
         let expr = Expr::like(Expr::arg(0), Expr::arg(1));
         assert!(verify_expr_with(&Capability::SQLITE, &expr).is_none());
+    }
+
+    // `Phone` has two fields so that a record slot (2) and a variant index
+    // (0 or 1) cannot be confused with each other.
+    #[derive(Debug, PartialEq, toasty::Embed)]
+    enum Contact {
+        #[column(variant = 1)]
+        Email { address: String },
+        #[column(variant = 2)]
+        Phone {
+            country_code: String,
+            number: String,
+        },
+    }
+
+    #[derive(Debug, toasty::Model)]
+    struct User {
+        #[key]
+        id: i64,
+        contact: Contact,
+    }
+
+    fn user_schema() -> Schema {
+        test_schema_with(&[User::schema(), Contact::schema()])
+    }
+
+    fn verify_user_filter(schema: &Schema, filter: &Expr) -> Option<Error> {
+        let mut error = None;
+        user_verifier(schema, &mut error).visit_expr(filter);
+        error
+    }
+
+    fn user_verifier<'a>(schema: &'a Schema, error: &'a mut Option<Error>) -> VerifyExpr<'a, 'a> {
+        VerifyExpr {
+            schema,
+            capability: &Capability::SQLITE,
+            model: User::id(),
+            error,
+        }
+    }
+
+    fn field_index(name: &str) -> usize {
+        let app::Model::Root(root) = User::schema() else {
+            panic!("User is a root model");
+        };
+        root.fields
+            .iter()
+            .position(|field| field.name.app.as_deref() == Some(name))
+            .expect("User has the field")
+    }
+
+    fn first_project(expr: &Expr) -> stmt::ExprProject {
+        struct FindProject(Option<stmt::ExprProject>);
+
+        impl stmt::Visit for FindProject {
+            fn visit_expr_project(&mut self, i: &stmt::ExprProject) {
+                if self.0.is_none() {
+                    self.0 = Some(i.clone());
+                }
+            }
+        }
+
+        let mut find = FindProject(None);
+        find.visit_expr(expr);
+        find.0.expect("expected an ExprProject")
+    }
+
+    #[test]
+    fn embedded_enum_project_base_skips_schema_resolution() {
+        let schema = user_schema();
+
+        // `email.address` and `phone.country_code` are both local 0, so both
+        // lower to the same node: base `contact`, slot 1. One slot cannot name
+        // both fields, so neither may be resolved as a schema path.
+        for filter in [
+            User::fields().contact().email().address().eq("x"),
+            User::fields().contact().phone().country_code().eq("x"),
+        ] {
+            let filter = filter.untyped;
+            let project = first_project(&filter);
+            assert_eq!(project.projection.as_slice(), [1]);
+
+            let mut error = None;
+            assert!(user_verifier(&schema, &mut error).is_embedded_enum_field(&project.base));
+
+            assert!(verify_user_filter(&schema, &filter).is_none());
+        }
+
+        // Resolving the slot as a schema path is not merely ambiguous, it
+        // picks a variant: `[contact, 1]` is variant index 1 (`Phone`) for
+        // both filters, so `email.address` used to pass as Phone's
+        // discriminant.
+        assert!(matches!(
+            schema.app.resolve(
+                schema.app.model(User::id()),
+                &stmt::Projection::from([field_index("contact"), 1]),
+            ),
+            Some(app::Resolved::Variant(v)) if v.name.upper_camel_case() == "Phone"
+        ));
+
+        // A primitive field base is not an embedded enum and keeps the schema
+        // resolution check.
+        let primitive = Expr::Reference(stmt::ExprReference::Field {
+            nesting: 0,
+            index: field_index("id"),
+        });
+        let mut error = None;
+        assert!(!user_verifier(&schema, &mut error).is_embedded_enum_field(&primitive));
+    }
+
+    #[test]
+    fn later_field_of_data_variant_passes_verify() {
+        let schema = user_schema();
+
+        // `phone.number` is local 1, so its record slot is 2. The slot does
+        // not identify a variant: `[contact, 2]` read as a schema path names
+        // variant index 2 of a two-variant enum.
+        let filter = User::fields().contact().phone().number().eq("x").untyped;
+        assert_eq!(first_project(&filter).projection.as_slice(), [2]);
+        assert!(verify_user_filter(&schema, &filter).is_none());
+    }
+
+    #[test]
+    fn oversized_enum_slot_passes_verify() {
+        let schema = user_schema();
+
+        // The skip covers every embedded-enum base, so a slot past every
+        // variant's record passes verify: the visitor has no record shape to
+        // check it against. This test asserts only that. Rejection is left to
+        // later stages and is backend-specific: SQL panics in bind/infer
+        // ("projection step N out of range for record with M fields"; see
+        // `engine::bind::tests::synthesize_project_step_out_of_bounds_panics`),
+        // and DynamoDB does not run bind at all. Record-aware validation is
+        // tracked in #1220.
+        let expr = Expr::Project(stmt::ExprProject {
+            base: Box::new(Expr::Reference(stmt::ExprReference::Field {
+                nesting: 0,
+                index: field_index("contact"),
+            })),
+            projection: stmt::Projection::single(99),
+        });
+
+        assert!(verify_user_filter(&schema, &expr).is_none());
     }
 }

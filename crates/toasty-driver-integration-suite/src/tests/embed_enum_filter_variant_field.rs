@@ -228,3 +228,77 @@ pub async fn filter_variant_field_with_storage_override(t: &mut Test) -> Result<
 
     Ok(())
 }
+
+/// Filter the second field of a data variant. Its record slot (`local + 1` = 2)
+/// exceeds the enum's variant count, so the slot must not be read as a schema
+/// path step. `X::a` holding the filtered string must not match: the filter
+/// selects the second field, not the variant. Both variants carry data;
+/// filtering mixed unit+data enums is out of scope here (see #1058).
+#[driver_test]
+pub async fn filter_later_field_of_data_variant(t: &mut Test) -> Result<()> {
+    #[derive(Debug, PartialEq, toasty::Embed)]
+    enum Contact {
+        #[column(variant = 1)]
+        X { a: String, b: String },
+        #[column(variant = 2)]
+        Y { c: String },
+    }
+
+    #[derive(Debug, toasty::Model)]
+    #[key(partition = group, local = id)]
+    #[allow(dead_code)]
+    struct User {
+        #[auto]
+        id: uuid::Uuid,
+        group: String,
+        name: String,
+        contact: Contact,
+    }
+
+    let mut db = t.setup_db(models!(User)).await;
+
+    for (name, contact) in [
+        (
+            "Alice",
+            Contact::X {
+                a: "first".to_string(),
+                b: "second".to_string(),
+            },
+        ),
+        (
+            "Bob",
+            Contact::X {
+                a: "second".to_string(),
+                b: "other".to_string(),
+            },
+        ),
+        (
+            "Carol",
+            Contact::Y {
+                c: "second".to_string(),
+            },
+        ),
+    ] {
+        toasty::create!(User {
+            group: "eng",
+            name,
+            contact,
+        })
+        .exec(&mut db)
+        .await?;
+    }
+
+    let rows = User::filter(
+        User::fields()
+            .group()
+            .eq("eng")
+            .and(User::fields().contact().x().matches(|x| x.b().eq("second"))),
+    )
+    .exec(&mut db)
+    .await?;
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "Alice");
+
+    Ok(())
+}
