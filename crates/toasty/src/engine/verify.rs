@@ -799,10 +799,21 @@ mod tests {
         #[key]
         id: i64,
         contact: Contact,
+        profile: Profile,
+        #[document]
+        settings: Profile,
+    }
+
+    // Two fields so that, as with `Contact`, a later struct step ([1]) is a
+    // real schema step and not a trivial resolution.
+    #[derive(Debug, toasty::Embed)]
+    struct Profile {
+        city: String,
+        bio: String,
     }
 
     fn user_schema() -> Schema {
-        test_schema_with(&[User::schema(), Contact::schema()])
+        test_schema_with(&[User::schema(), Contact::schema(), Profile::schema()])
     }
 
     fn verify_user_filter(schema: &Schema, filter: &Expr) -> Option<Error> {
@@ -922,5 +933,83 @@ mod tests {
         });
 
         assert!(verify_user_filter(&schema, &expr).is_none());
+    }
+
+    // The skip is keyed on the base's kind, not on the step's value: struct,
+    // document, and primitive bases keep the schema resolution check, so a
+    // bad step through them still panics in verify (record slots over enum
+    // bases are the only thing that skips — see #1220). These tests pin that
+    // boundary: broadening the skip past embedded enums must fail here.
+    #[test]
+    #[should_panic(expected = "failed to resolve projection")]
+    fn bad_step_through_embedded_struct_still_panics() {
+        let schema = user_schema();
+
+        // `Profile`'s steps are schema field indices, not record slots, so
+        // step 99 is an invalid field index.
+        let expr = Expr::Project(stmt::ExprProject {
+            base: Box::new(Expr::Reference(stmt::ExprReference::Field {
+                nesting: 0,
+                index: field_index("profile"),
+            })),
+            projection: stmt::Projection::single(99),
+        });
+
+        let _ = verify_user_filter(&schema, &expr);
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to resolve projection")]
+    fn bad_step_through_document_field_still_panics() {
+        let schema = user_schema();
+
+        // `settings` is a `#[document]` field; its steps are validated by the
+        // document walk (`project_fields`), which stops short on an
+        // out-of-range step, so resolution fails.
+        let expr = Expr::Project(stmt::ExprProject {
+            base: Box::new(Expr::Reference(stmt::ExprReference::Field {
+                nesting: 0,
+                index: field_index("settings"),
+            })),
+            projection: stmt::Projection::single(99),
+        });
+
+        let _ = verify_user_filter(&schema, &expr);
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to resolve projection")]
+    fn bad_step_through_primitive_field_still_panics() {
+        let schema = user_schema();
+
+        // A primitive field cannot be projected through at all.
+        let expr = Expr::Project(stmt::ExprProject {
+            base: Box::new(Expr::Reference(stmt::ExprReference::Field {
+                nesting: 0,
+                index: field_index("id"),
+            })),
+            projection: stmt::Projection::single(0),
+        });
+
+        let _ = verify_user_filter(&schema, &expr);
+    }
+
+    #[test]
+    fn valid_embedded_struct_step_still_resolves() {
+        let schema = user_schema();
+
+        // `profile.bio` is struct-local index 1 — the same `[1]` step that
+        // skips resolution over an enum base resolves as a schema field index
+        // over a struct base.
+        let filter = User::fields().profile().bio().eq("x").untyped;
+        assert_eq!(first_project(&filter).projection.as_slice(), [1]);
+        assert!(matches!(
+            schema.app.resolve(
+                schema.app.model(User::id()),
+                &stmt::Projection::from([field_index("profile"), 1]),
+            ),
+            Some(app::Resolved::Field(field)) if field.name.app.as_deref() == Some("bio")
+        ));
+        assert!(verify_user_filter(&schema, &filter).is_none());
     }
 }
